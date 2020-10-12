@@ -1,9 +1,14 @@
 #!/bin/bash -x
 PXE='PXE4640'
 TARGET='TODO_4640'
+PXESSH=9222
+VMSSH=8222
+VMHTTP=8080
+
 vbmg() {
 	VBoxManage.exe "$@";
 }
+
 
 createVM() {
 	
@@ -23,9 +28,9 @@ createVM() {
 	#Set memory and network
 	vbmg natnetwork add --netname "$NATNETWORK" --enable --dhcp off \
 		--network 192.168.150.0/24 \
-		--port-forward-4 "PXESSH:tcp:[]:9222:[192.168.150.10]:22" \
-		--port-forward-4 "VMHTTP:tcp:[]:8080:[192.168.150.200]:80" \
-		--port-forward-4 "VMSSH:tcp:[]:8222:[192.168.150.200]:22"
+		--port-forward-4 "PXESSH:tcp:[]:$PXESSH:[192.168.150.10]:22" \
+		--port-forward-4 "VMHTTP:tcp:[]:$VMHTTP:[192.168.150.200]:80" \
+		--port-forward-4 "VMSSH:tcp:[]:$VMSSH:[192.168.150.200]:22"
 
 	#Create Disk
 	vbmg createmedium disk --filename "$VM_FOLDER/$1.vdi" --size 10240
@@ -67,7 +72,7 @@ vbmg modifyvm $PXE --nic1 natnetwork --nat-network1 NET_4640 --cableconnected1 o
 vbmg startvm $PXE
 echo "Checking if PXE server is up"
 while /bin/true; do
-	ssh -i ~/.ssh/acit_admin_id_rsa -p 9222 -q -o ConnectTimeout=2 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@localhost exit
+	ssh -i ~/.ssh/acit_admin_id_rsa -p $PXESSH -q -o ConnectTimeout=2 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null admin@localhost exit
 	if [ $? -ne 0 ]; then
 		echo "PXE server is not up, sleeping..."
 		sleep 5
@@ -76,8 +81,8 @@ while /bin/true; do
 	fi
 done
 echo "Copy all necessary files to PXE server"
-scp -i ~/.ssh/acit_admin_id_rsa install.sh pxe:/www/
-scp -i ~/.ssh/acit_admin_id_rsa ks.cfg pxe:/www/
+scp -P$PXESSH -r -i ~/.ssh/acit_admin_id_rsa install.sh admin@localhost:/www/
+scp -P$PXESSH -r -i ~/.ssh/acit_admin_id_rsa ks.cfg admin@localhost:/www/
 #Start the VM
 vbmg startvm $TARGET
 
@@ -85,7 +90,7 @@ spin='-\|/'
 i=0
 echo "Setting up todoapp... will take a few mins.."
 while /bin/true; do
-	output=`curl -Is localhost:8080 | head -n 1`
+	output=`curl -Is localhost:$VMHTTP | head -n 1`
 	if [[ $output =~ "HTTP/1.1 200 OK" ]]; then
 		echo "Website is up! shutdown PXE server..."
 		break

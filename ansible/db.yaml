@@ -1,0 +1,47 @@
+---
+- hosts: db
+  become: true
+  tasks:
+    - name: Create the MongoDB repository file
+      copy:
+        src: ./files/mongo.repo
+        dest: /etc/yum.repos.d/mongodb-org-4.4.repo
+    - name: Install MongoDB
+      package:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - tar
+        - mongodb-org
+    - name: Provision /etc/mongodb.conf
+      copy:
+        src: ./files/mongod.conf
+        dest: /etc/mongod.conf
+    - name: Start and enable Mongodb
+      systemd:
+        name: mongod
+        enabled: true
+        state: started
+    - name: Download the mongod export
+      get_url:
+        url: https://acit4640.y.vu/docs/module06/resources/mongodb_ACIT4640.tgz
+        dest: /tmp/mongodb_export.tgz
+        username: student
+        password: BCIT2020
+      register: download_mongo_export
+    - name: Unpack the Mongo export data
+      when: download_mongo_export.changed
+      unarchive:
+        src: /tmp/mongodb_export.tgz
+        dest: /tmp/
+        remote_src: true
+      register: unpack_mongo_data
+    - name: Import mongo data
+      when: unpack_mongo_data.changed
+      shell: mongorestore -d ACIT4640 /tmp/ACIT4640
+    - name: Setup firewall
+      firewalld:
+        port: 27017/tcp
+        state: enabled
+        permanent: yes
+        immediate: yes

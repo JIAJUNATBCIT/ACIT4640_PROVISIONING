@@ -1,0 +1,54 @@
+---
+  - hosts: app
+    become: true
+    vars:
+      todoapp_user: todoapp
+    tasks:
+      - name: Add NodeSource yum repository
+        shell: curl -sL https://rpm.nodesource.com/setup_14.x | sudo bash -
+      - name: Install git nodejs
+        package:
+          name: "{{ item }}"
+          state: present
+        with_items:
+          - git
+          - nodejs
+      - name: make sure todoapp user exists
+        user:
+          name: "{{todoapp_user}}"
+      - name: Adjust permission in todoapp home folder
+        file: 
+          path: /home/{{todoapp_user}}
+          mode: '0755'
+      - name: clone the project from git
+        become_user: "{{todoapp_user}}"
+        git: 
+          repo: https://github.com/timoguic/ACIT4640-todo-app.git
+          dest: /home/{{ todoapp_user }}/ACIT4640-todo-app
+          force: yes
+      - name: Npm install all project packages
+        shell: npm install
+        become_user: "{{ todoapp_user }}"
+        args:
+          chdir: /home/{{todoapp_user}}/ACIT4640-todo-app
+      - name: Make sure the DB settings are correct
+        become_user: "{{ todoapp_user }}"
+        replace: 
+          path: /home/{{todoapp_user}}/ACIT4640-todo-app/config/database.js
+          regexp: "localhost/CHANGEME" 
+          replace: "192.168.150.30/ACIT4640"
+      - name: Provision the unit file for the todoapp
+        template:
+          src: template/todoapp.j2
+          dest: /etc/systemd/system/todoapp.service
+      - name: Start and enable todoapp
+        systemd:
+          name: "{{todoapp_user}}"
+          enabled: true
+          state: started
+      - name: Setup firewall for Nodejs
+        firewalld:
+          port: 8080/tcp
+          state: enabled
+          permanent: yes
+          immediate: yes

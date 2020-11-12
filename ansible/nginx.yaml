@@ -1,0 +1,17 @@
+---
+- hosts: nginx
+  become: true
+  tasks:
+    - name: Insatll nginx
+      package:
+        name: nginx
+        state: present
+    - name: Copy Nginx Config to dest
+      copy:
+        src: ./files/nginx.conf
+        dest: /etc/nginx/nginx.conf
+    - name: Start and enable nginx
+      systemd:
+        name: nginx
+        enabled: true
+        state: started

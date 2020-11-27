@@ -1,0 +1,39 @@
+---
+- hosts: localhost
+  vars:
+    AWS_PREFIX: ACIT4640
+    AWS_REGION: us-west-2
+    AWS_AZ: us-west-2a
+  tasks:
+    - import_tasks: aws.yaml
+      tags: 
+        - aws
+        - provision
+        - never
+- hosts: aws_ec2
+  vars:
+    TODOAPP_USER: todoapp
+    application_path: app
+  become: yes
+  tasks:
+    - import_tasks: app_provisioning.yaml
+      tags:
+        - application
+        - provision
+        - never
+- hosts: aws_ec2
+  become: yes
+  tasks:
+    - import_tasks: info_tasks.yaml
+      tags:
+        - info
+        - provision
+- hosts: localhost
+  vars:
+    AWS_PREFIX: ACIT4640
+    AWS_REGION: us-west-2
+  tasks: 
+    - import_tasks: cleanup.yaml
+      tags:
+        - clean
+        - never

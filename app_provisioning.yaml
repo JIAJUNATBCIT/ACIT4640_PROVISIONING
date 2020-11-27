@@ -1,0 +1,107 @@
+- name: APP - Disable Selinux
+  ansible.posix.selinux:
+    state: disabled
+- name: APP - Add NodeSource yum repository
+  shell: curl -sL https://rpm.nodesource.com/setup_14.x | sudo bash -
+  args:
+    warn: no
+- name: APP - Install git nodejs
+  package:
+    name: "{{ item }}"
+    state: present
+  with_items:
+      - git
+      - nodejs
+- name: APP - make sure todoapp user exists
+  user:
+    name: "{{TODOAPP_USER}}"
+- name: APP - Adjust permission in todoapp home folder
+  file: 
+    path: "/home/{{TODOAPP_USER}}"
+    mode: '0755'
+- name: APP - Create project folder
+  file:
+    path: "/home/{{ TODOAPP_USER }}/{{application_path}}"
+    state: directory
+    mode: '0755'
+    owner: todoapp
+    group: todoapp
+- name: APP - clone the project from git
+  become_user: "{{TODOAPP_USER}}"
+  git: 
+    repo: https://github.com/timoguic/ACIT4640-todo-app.git
+    dest: "/home/{{ TODOAPP_USER }}/{{application_path}}"
+    force: yes
+- name: APP - Npm install all project packages
+  shell: npm install
+  become_user: "{{ TODOAPP_USER }}"
+  args:
+    chdir: "/home/{{TODOAPP_USER}}/{{application_path}}"
+- name: APP - Make sure the DB settings are correct
+  become_user: "{{ TODOAPP_USER }}"
+  replace: 
+    path: /home/{{TODOAPP_USER}}/{{application_path}}/config/database.js
+    regexp: "localhost/CHANGEME" 
+    replace: "127.0.0.1/ACIT4640"
+- name: APP - Provision the unit file for the todoapp
+  template:
+    src: templates/todoapp.j2
+    dest: /etc/systemd/system/todoapp.service
+- name: APP - Start and enable todoapp
+  systemd:
+    name: "{{TODOAPP_USER}}"
+    enabled: true
+    state: started
+- name: DB - Create the MongoDB repository file
+  copy:
+    src: ./files/mongo.repo
+    dest: /etc/yum.repos.d/mongodb-org-4.4.repo
+- name: DB - Install MongoDB
+  package:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - tar
+    - mongodb-org
+- name: DB - Provision /etc/mongodb.conf
+  copy:
+    src: ./files/mongod.conf
+    dest: /etc/mongod.conf
+- name: DB - Start and enable Mongodb
+  systemd:
+    name: mongod
+    enabled: true
+    state: started
+- name: DB - Download the mongodb export
+  get_url:
+    url: https://acit4640.y.vu/docs/module06/resources/mongodb_ACIT4640.tgz
+    dest: /tmp/mongodb_export.tgz
+    username: student
+    password: BCIT2020
+  register: download_mongo_export
+- name: DB - Unpack the Mongo export data
+  when: download_mongo_export.changed
+  unarchive:
+    src: /tmp/mongodb_export.tgz
+    dest: /tmp/
+    remote_src: true
+  register: unpack_mongo_data
+- name: DB - Import mongo data
+  when: unpack_mongo_data.changed
+  shell: mongorestore -d ACIT4640 /tmp/ACIT4640
+- name: WWW - Install Nginx
+  package:
+    name: nginx
+    state: present
+- name: WWW - Copy Nginx config to dest
+  copy:
+    src: ./files/nginx.conf
+    dest: /etc/nginx/nginx.conf
+- name: WWW - Start Nginx
+  systemd:
+    name: nginx
+    state: started
+- name: WWW - Restart the APP and finish the provision
+  systemd:
+    name: todoapp
+    state: restarted

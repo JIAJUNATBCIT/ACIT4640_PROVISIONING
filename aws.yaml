@@ -1,0 +1,87 @@
+---
+- name: Provision the VPC
+  ec2_vpc_net:
+    name: "{{AWS_PREFIX}}_VPC"
+    cidr_block: 10.42.0.0/16
+    region: "{{AWS_REGION}}"
+  register: vpc_return
+- name: Provision subnet
+  ec2_vpc_subnet:
+    vpc_id: "{{vpc_return.vpc.id}}"
+    cidr: 10.42.10.0/24
+    region: "{{AWS_REGION}}"
+    az: "{{AWS_AZ}}"
+    tags:
+      Name: "{{AWS_PREFIX}}_SUBNET"
+  register: subnet_return
+- name: Provision Internet GW
+  ec2_vpc_igw:      
+    vpc_id: "{{vpc_return.vpc.id}}"
+    region: "{{AWS_REGION}}"
+    tags:
+      Name: "{{AWS_PREFIX}}_GW"
+  register: igw_return
+- name: Provision Routing Table
+  ec2_vpc_route_table:
+    vpc_id: "{{vpc_return.vpc.id}}"
+    region: "{{AWS_REGION}}"
+    subnets: 
+      - "{{subnet_return.subnet.id}}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{igw_return.gateway_id}}"
+    tags:
+      Name: "{{AWS_PREFIX}}_RTBL"
+- name: Fetch current user's public IP
+  uri:
+    url: http://ifconfig.me/ip
+    return_content: yes
+  register: public_ip
+- name: Provision Security Group
+  ec2_group:
+    name: "{{AWS_PREFIX}}_SECGROUP"
+    vpc_id: "{{vpc_return.vpc.id}}"
+    description: security group allows ssh and http from anywhere
+    region: "{{AWS_REGION}}"
+    tags:
+      Name: "{{AWS_PREFIX}}_SECGROUP"
+    rules:
+      - proto: tcp
+        ports:
+          - 80
+        cidr_ip: 0.0.0.0/0
+        rule_desc: allow all on port 80
+      - proto: tcp
+        ports:
+          - 22
+        cidr_ip: "{{public_ip.content}}/32"
+        rule_desc: allow ssh for current user
+- name: Provision the EC2 instance
+  ec2: 
+    image: ami-0157b1e4eefd91fd7
+    instance_type: t2.micro
+    exact_count: 1
+    count_tag: 
+      Name: "{{AWS_PREFIX}}_VM"
+    group: "{{AWS_PREFIX}}_SECGROUP"
+    region: "{{AWS_REGION}}"
+    vpc_subnet_id: "{{subnet_return.subnet.id}}"
+    key_name: ACIT4640_KEY
+    assign_public_ip: yes
+    instance_tags: 
+      Name: "{{AWS_PREFIX}}_VM"
+    wait: yes
+  register: ec2_return
+- name: Update Nginx config
+  lineinfile:
+    path: ./files/nginx.conf
+    regexp: '^(.*)proxy_pass(.*)$'
+
+    line: "            proxy_pass http://{{ ec2_return.tagged_instances[0].dns_name }}:8080;"
+    backrefs: yes
+- name: Wait for the VM to be available for ssh
+  wait_for:
+    port: 22 
+    host: "{{ ec2_return.tagged_instances[0].public_ip }}"
+- name: Refresh Ansible Inventory
+  meta: refresh_inventory

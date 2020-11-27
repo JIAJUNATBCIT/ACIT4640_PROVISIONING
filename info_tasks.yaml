@@ -1,0 +1,12 @@
+---
+- name: Check if the website is up
+  uri:
+    url: "http://{{ansible_host}}"
+    timeout: 150
+  register: http_return
+- name: Print EC2 public IP
+  when: http_return.status == 200
+  debug:
+    msg: 
+      - "VM public IP: {{ansible_host}}" 
+      - "Now the website is up and running !!!" 
